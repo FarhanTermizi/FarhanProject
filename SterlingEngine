@@ -1,0 +1,36 @@
+# using mathjax version 3
+sphinx:
+  config:
+    mathjax_path: https://cdn.jsdelivr.net/npm/mathjax@4/es5/tex-mml-chtml.js
+
+import cmath
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+P_1=10**5
+V_1=0.0005
+V_2=0.0004
+T_c=20+273.15
+T_h=70+273.15
+T_1=T_2=T_c
+T_3=T_4=T_h
+V_3=V_2
+V_4=V_1
+
+P_2=(P_1*V_1)/V_2
+P_3=(T_3*P_2)/T_2
+P_4=(P_3*V_3)/V_4
+display(P_1)
+display(P_2,P_3,P_4)
+
+#lists
+Pressure = np.array([P_1,P_2,P_3,P_4,P_1])
+Volume = np.array([V_1,V_2,V_3,V_4,V_1])
+display(Pressure,Volume)
+
+x = Volume
+y = Pressure
+
+plt.plot(x,y)
+plt.show()
