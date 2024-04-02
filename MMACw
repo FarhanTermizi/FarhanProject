@@ -1,0 +1,41 @@
+A=xlsread('data.csv');
+
+theta = A(:,1);
+u=A(:,2);
+v=A(:,3);
+p=A(:,4);
+R=2;
+rho= 1.225;
+A = pi.*R^2;
+U = (200*10^3)/(60*60);
+L=0.8;
+
+I = trapz(theta,fun_1);
+F_py = trapz(theta,fun_2);
+F_L = -F_py + R.*I;
+C_L = -F_L/(0.5.*rho.*U^2.*L)
+
+
+
+%for part ii
+%fun_2 = -R.*p.*sin(theta);
+%plot(theta,fun_2)
+%xlabel('Theta (radians)')
+%ylabel('-Rpsin(theta) (N/m)')
+%title('Azimuthal variation for -Rpsin(theta)')
+grid on
+
+%for part i
+%un = u.*cos(theta)+v.*sin(theta);
+%fun_1 = rho.*v.*un;
+%plot(theta,fun_1)
+%xlabel('Theta (radians)')
+%ylabel('pv(u.n) (kg/ms^2)')
+%title('Azimuthal variation for pv(u.n)')
+grid on
+
+
+I = trapz(theta,fun_1);
+F_py = trapz(theta,fun_2);
+F_L = -F_py + R.*I;
+C_L = -F_L/(0.5.*rho.*U^2.*L)
