@@ -1,0 +1,32 @@
+clc
+close all
+clear
+
+N = 67330000; %initialise population 
+S(1) = 67329000; %number of susceptible people initially 
+I(1) = 1000; %number of infected people initially
+R(1) = 0; %number of recovered people initially
+
+b = 0.058; %insert your infection rate
+k = 0.02; %insert your recovery rate 
+
+t_start = 1;
+increment = 1;
+t_end = 1000;
+
+for i = t_start:increment:t_end
+    S(i+1) = S(i) - b*I(i)*S(i)/N; %determine new population of susceptible people
+    I(i+1) = I(i) +  b*I(i)*S(i)/N - k*I(i); %determine new population of infected people 
+    R(i+1) = R(i) + k*I(i); %determine new population of recovered people
+end
+
+figure; %plot 
+%
+ plot(1e-6*S,'LineWidth',2);
+hold on 
+plot(1e-6*I,'linewidth',2);
+plot(1e-6*R,'linewidth',2);
+hold off
+legend('S','I','R', 'fontsize',20)
+xlabel('Day','fontsize',22);
+ylabel('Population (millions)','fontsize',22)
