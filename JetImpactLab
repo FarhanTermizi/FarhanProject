@@ -1,0 +1,51 @@
+    clear all
+close all
+
+%%%This code plots out the experimental data and the theoretical prediction
+%%%using Newton's laws. 
+
+%%Inputs
+%%1. The vane type; either the flat plate or the hemisphere vane.
+    %%Example input
+    %%Vane='hemisphere'
+    %%Vane='flat_plate'
+%%2. The volumetric flow rate. 
+    %%Example input
+    %%Q=[1 2 3 4]*0.001
+%%3. The distance 'y' measured in the experiment (m). (Vector of values)
+    %%Example input
+    %%y=[1 2 3 4]
+
+%%Note that the array length in Inputs 2 and 3 must be identical
+
+%Vane='hemisphere'
+Vane='flat_plate'
+
+Q=[5]*0.001   %conversion from litres per second to m^3
+y=[0.004]   %m
+
+F=39.24*y;       %%Experimentally determined force on jet
+
+rho=1000;        %%Fluid density 
+A=0.0000784;     %%Area of Jet
+v_1=Q/A;         %%Velocity of Jet exiting nozzle  
+
+mdot=rho*v_1*A; %%Mass flow rate of jet
+
+momentum_flux=mdot.*v_1;      %Momentum flux of jet
+
+plot(momentum_flux,F,'kx','markersize',8)
+hold on
+
+%%Plot out theoretical values (see appendix for details)
+if(Vane=='flat_plate')
+    plot([0 2],[0 2],'k-','linewidth',2)
+elseif  (Vane=='hemisphere')  
+plot([0 2],[0 4],'k-','linewidth',2)
+end
+
+xlabel('$\dot{m}v_1 (kgms^{-2})$','Interpreter','Latex','fontsize',20)
+ylabel('$F (N)$','Interpreter','Latex','fontsize',20)
+    set(gca,'fontsize',18) 
+title([Vane],'fontsize',18)
+  axis([0 2.5 0 4])
