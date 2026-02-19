@@ -1,0 +1,222 @@
+%%% Converting 1 tdms file to v2
+inFile  = "C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\BTB States - UG\Stable\Can 1 - CH4 - 1700K_1.tdms";
+outFile = "C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\BTB States - UG\Stable\Can 1 - CH4 - 1700K_1_v2.tdms";
+
+tdmsconvert(inFile, outFile)      % converts to a supported TDMS v2.0
+tdmsdata = tdmsread(outFile);     % now read it
+
+%% Converting multiple tdms file to v2
+% Define the folder containing your TDMS files
+inputFolder = 'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\Intermittent - CAN 1\';
+
+% Get all .tdms files in the folder
+files = dir(fullfile(inputFolder, '*.tdms'));
+
+for i = 1:length(files)
+    inFile = fullfile(inputFolder, files(i).name);
+    
+    % Create output filename with _v2 suffix
+    [~, name, ext] = fileparts(files(i).name);
+    outFile = fullfile(inputFolder, [name '_v2' ext]);
+    
+    % Skip files that are already converted (have _v2 in name)
+    if contains(name, '_v2')
+        continue;
+    end
+    
+    fprintf('Converting: %s\n', files(i).name);
+    
+    tdmsconvert(inFile, outFile);   % converts to a supported TDMS v2.0
+    tdmsdata = tdmsread(outFile);   % now read it
+    
+    % Optional: store data in a cell array
+    allData{i} = tdmsdata;
+end
+
+disp('All files converted!');
+
+%%
+%%% Reading 1 tdms file properties
+tdmsinfo = tdmsread('C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\Intermittent - CAN 1\V2\Can 1 - CH4 - 1900K_1_v2.tdms');
+
+%tdms info and reading properties
+summary(tdmsdata)
+tdmsdata{1}.Properties
+tdmsdata{2}.Properties
+tdmsdata{3}.Properties
+summary(tdmsdata{1})
+summary(tdmsdata{2})
+summary(tdmsdata{3})
+
+%% 
+%%% plotting data from 1 tdmsdata, extracting tdmsdata{2}
+% Extract data from tdmsdata{2}
+data = tdmsdata{2};
+
+PD_CC = data.PD_CC_1_1;
+PMT   = data.PMT_1_1;
+
+% Plot
+figure;
+subplot(2,1,1)
+plot(PD_CC)
+title('PD\_CC\_1\_1')
+xlabel('Sample')
+ylabel('Amplitude')
+grid on
+
+subplot(2,1,2)
+plot(PMT)
+title('PMT\_1\_1')
+xlabel('Sample')
+ylabel('Amplitude')
+grid on
+
+sgtitle('Extracted Signals from tdmsdata{2}')
+
+%% 
+%%% Read multiple TDMS files from Intermittent
+
+inputFolder = 'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\Intermittent - CAN 1\V2\';
+
+files = dir(fullfile(inputFolder, '*_v2.tdms'));
+
+% Preallocate
+allPD_CC = cell(length(files), 1);
+allPMT   = cell(length(files), 1);
+fileNames = cell(length(files), 1);
+
+for i = 1:length(files)
+    filePath = fullfile(inputFolder, files(i).name);
+    fprintf('Reading: %s\n', files(i).name);
+    
+    tdmsdata = tdmsread(filePath);
+    
+    % Extract from tdmsdata{2}
+    allPD_CC{i} = tdmsdata{2}.PD_CC_1_1;
+    allPMT{i}   = tdmsdata{2}.PMT_1_1;
+    fileNames{i} = files(i).name;
+end
+
+%% Plot all files - separate figures per file
+for i = 1:length(files)
+    figure;
+    subplot(2,1,1)
+    plot(allPD_CC{i})
+    title(['PD\_CC\_1\_1 - ' strrep(fileNames{i}, '_', '\_')])
+    xlabel('Sample'); ylabel('Amplitude'); grid on
+
+    subplot(2,1,2)
+    plot(allPMT{i})
+    title(['PMT\_1\_1 - ' strrep(fileNames{i}, '_', '\_')])
+    xlabel('Sample'); ylabel('Amplitude'); grid on
+
+    sgtitle(strrep(fileNames{i}, '_', '\_'))
+end
+
+%%
+%%% From multiple folders
+folders = {
+    'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\Intermittent - CAN 1\V2\';
+    'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\Stable - CAN 1\V2\';
+    'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\LCO - CAN 1\V2\';
+    % add more folders as needed
+};
+
+%% Read all files from all folders
+allPD_CC  = {};
+allPMT    = {};
+fileNames = {};
+folderLabels = {};
+
+for f = 1:length(folders)
+    files = dir(fullfile(folders{f}, '*_v2.tdms'));
+    fprintf('Folder %d: found %d files\n', f, length(files));
+    
+    for i = 1:length(files)
+        filePath = fullfile(folders{f}, files(i).name);
+        fprintf('  Reading: %s\n', files(i).name);
+        
+        tdmsdata = tdmsread(filePath);
+        
+        allPD_CC{end+1}     = tdmsdata{2}.PD_CC_1_1;
+        allPMT{end+1}       = tdmsdata{2}.PMT_1_1;
+        fileNames{end+1}    = files(i).name;
+        folderLabels{end+1} = folders{f};  % track which folder it came from
+    end
+end
+
+%%
+for f = 1:length(folders)
+    % Find indices belonging to this folder
+    idx = find(strcmp(folderLabels, folders{f}));
+    
+    figure;
+    subplot(2,1,1); hold on
+    for i = idx
+        plot(allPD_CC{i}, 'DisplayName', strrep(fileNames{i}, '_', '\_'))
+    end
+    title('PD\_CC\_1\_1'); xlabel('Sample'); ylabel('Amplitude')
+    legend; grid on
+
+    subplot(2,1,2); hold on
+    for i = idx
+        plot(allPMT{i}, 'DisplayName', strrep(fileNames{i}, '_', '\_'))
+    end
+    title('PMT\_1\_1'); xlabel('Sample'); ylabel('Amplitude')
+    legend; grid on
+
+    % Use folder name as figure title
+    [~, folderName] = fileparts(folders{f});
+    sgtitle(strrep(folderName, '_', '\_'))
+end
+
+%%
+%%% Extracting PD_CC and PMT data for each tdms file in the folder and save
+%%% into csv file
+
+outputFolder = 'C:\Users\farha\Desktop\UCL\Individial Project\OneDrive_2026-02-12\CAN 1\';
+if ~exist(outputFolder, 'dir')
+    mkdir(outputFolder);
+end
+
+for f = 1:length(folders)
+    files = dir(fullfile(folders{f}, '*_v2.tdms'));
+    
+    for i = 1:length(files)
+        filePath = fullfile(folders{f}, files(i).name);
+        fprintf('Reading: %s\n', files(i).name);
+        
+        tdmsdata = tdmsread(filePath);
+        
+        % Extract signals
+        PD_CC = tdmsdata{2}.PD_CC_1_1;
+        PMT   = tdmsdata{2}.PMT_1_1;
+        
+        % Create table
+        T = table(PD_CC, PMT, 'VariableNames', {'PD_CC_1_1', 'PMT_1_1'});
+        
+        % Add sample index
+        T.Sample = (1:height(T))';
+        
+        % Add metadata columns (useful for ML labeling)
+        [~, folderName] = fileparts(folders{f});
+        T.FileName   = repmat({files(i).name}, height(T), 1);
+        T.FolderName = repmat({folderName}, height(T), 1);
+        
+        % Generate output filename
+        [~, name, ~] = fileparts(files(i).name);
+        
+        % --- Option 1: Save as CSV ---
+        csvFile = fullfile(outputFolder, [name '.csv']);
+        writetable(T, csvFile);
+        fprintf('  Saved CSV: %s\n', csvFile);
+        
+        % --- Option 2: Save as Parquet ---
+        parquetFile = fullfile(outputFolder, [name '.parquet']);
+        parquetwrite(parquetFile, T);
+        fprintf('  Saved Parquet: %s\n', parquetFile);
+    end
+end
+
+fprintf('Done! All files saved to %s\n', outputFolder);
