@@ -1,0 +1,177 @@
+% =========================================================
+% Full Stress-Strain Conversion + Undamaged True Stress
+% MECH0026 - Plasticity Coursework
+% Aluminium Uniaxial Tensile Test
+% =========================================================
+% Columns computed:
+%   (1) Engineering Strain,        eps_n
+%   (2) Engineering Stress,        sig_n       (MPa)
+%   (3) True Strain,               eps_t       = ln(1 + eps_n)
+%   (4) True Stress,               sig_t       = sig_n * (1 + eps_n)
+%   (5) True Plastic Strain,       eps_t_pl    = eps_t - sig_t/E
+%   (6) Undamaged True Stress,     sig_t_tilde = sig_t          for eps_n <= eps_UTS
+%                                              = sig_UTS*(1+eps_n) for eps_n >  eps_UTS
+% =========================================================
+
+clc; clear; close all;
+
+%% 1. LOAD DATA
+data = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+
+eps_n = data(:, 1);   % Engineering strain  (-)
+sig_n = data(:, 2);   % Engineering stress  (MPa)
+N     = length(eps_n);
+fprintf('Loaded %d data points.\n', N);
+
+%% 2. MATERIAL PARAMETERS
+E         = 69170;    % Young's modulus (MPa)
+nu        = 0.3;      % Poisson's ratio (given)
+sig_y_eng = 119.76;   % Engineering yield stress (MPa)
+eps_y_eng = 0.0037;   % Engineering yield strain (-)
+
+%% 3. KEY INDICES
+yield_idx           = find(eps_n >= eps_y_eng, 1, 'first');
+[sig_UTS_eng, uts_idx] = max(sig_n);
+eps_UTS_eng         = eps_n(uts_idx);
+
+fprintf('Yield : index %d,  eps_n = %.4f,  sig_n = %.2f MPa\n', ...
+        yield_idx, eps_n(yield_idx), sig_n(yield_idx));
+fprintf('UTS   : index %d,  eps_n = %.4f,  sig_n = %.2f MPa\n', ...
+        uts_idx, eps_UTS_eng, sig_UTS_eng);
+
+%% 4. TRUE STRESS & TRUE STRAIN (all points)
+eps_t = log(1 + eps_n);
+sig_t = sig_n .* (1 + eps_n);
+
+%% 5. TRUE PLASTIC STRAIN (all points)
+eps_t_pl = max(eps_t - sig_t ./ E, 0);
+
+%% 6. UNDAMAGED (EFFECTIVE) TRUE STRESS
+% Before/at UTS : same as true stress (D = 0, no damage yet)
+% After UTS     : perfectly plastic assumption -> sig_UTS_eng * (1 + eps_n)
+%                 This removes the effect of damage from the stress drop
+sig_t_tilde = zeros(N, 1);
+for i = 1:N
+    if eps_n(i) <= eps_UTS_eng
+        sig_t_tilde(i) = sig_t(i);                      % No damage
+    else
+        sig_t_tilde(i) = sig_UTS_eng * (1 + eps_n(i));  % Perfectly plastic
+    end
+end
+
+%% 7. KEY VALUES SUMMARY
+sig_t_yield  = sig_y_eng  * (1 + eps_y_eng);
+eps_t_yield  = log(1 + eps_y_eng);
+sig_t_UTS    = sig_UTS_eng * (1 + eps_UTS_eng);
+eps_t_UTS    = log(1 + eps_UTS_eng);
+eps_t_pl_UTS = eps_t_UTS - sig_t_UTS / E;
+
+fprintf('\n============================================\n');
+fprintf('  Key Values\n');
+fprintf('============================================\n');
+fprintf('  E                    = %d MPa\n',     E);
+fprintf('  nu                   = %.1f\n',        nu);
+fprintf('  sig_y  (eng)         = %.2f MPa\n',   sig_y_eng);
+fprintf('  eps_y  (eng)         = %.4f\n',        eps_y_eng);
+fprintf('  sig_t  (yield)       = %.4f MPa\n',   sig_t_yield);
+fprintf('  eps_t  (yield)       = %.6f\n',        eps_t_yield);
+fprintf('  sig_UTS (eng)        = %.4f MPa\n',   sig_UTS_eng);
+fprintf('  eps_UTS (eng)        = %.4f\n',        eps_UTS_eng);
+fprintf('  sig_t  (UTS)         = %.4f MPa\n',   sig_t_UTS);
+fprintf('  eps_t  (UTS)         = %.6f\n',        eps_t_UTS);
+fprintf('  eps_t_pl (UTS)       = %.6f\n',        eps_t_pl_UTS);
+fprintf('============================================\n\n');
+
+%% 8. PRINT TABLE TO COMMAND WINDOW
+fprintf('%-5s | %-10s | %-12s | %-10s | %-12s | %-14s | %-16s\n', ...
+    'idx','eps_n','sig_n(MPa)','eps_t','sig_t(MPa)','eps_t_pl','sig_t_tilde(MPa)');
+fprintf('%s\n', repmat('-',1,90));
+for i = 1:N
+    fprintf('%-5d | %-10.5f | %-12.4f | %-10.5f | %-12.4f | %-14.6f | %-16.4f\n', ...
+        i, eps_n(i), sig_n(i), eps_t(i), sig_t(i), eps_t_pl(i), sig_t_tilde(i));
+end
+fprintf('%s\n', repmat('-',1,90));
+
+%% 9. EXPORT TO EXCEL
+region = strings(N,1);
+for i = 1:N
+    if i < yield_idx,       region(i) = "Elastic";
+    elseif i <= uts_idx,    region(i) = "Plastic";
+    else,                   region(i) = "Post-necking";
+    end
+end
+
+out_table = table(eps_n, sig_n, eps_t, sig_t, eps_t_pl, sig_t_tilde, region, ...
+    'VariableNames', { ...
+    'Eng_Strain_eps_n', ...
+    'Eng_Stress_sig_n_MPa', ...
+    'True_Strain_eps_t', ...
+    'True_Stress_sig_t_MPa', ...
+    'True_Plastic_Strain_eps_t_pl', ...
+    'Undamaged_True_Stress_sig_t_tilde_MPa', ...
+    'Region'});
+
+output_file = 'Aluminium_Full_Stress_Strain_Results.xlsx';
+writetable(out_table, output_file, 'Sheet', 'All_Data');
+fprintf('Exported to: %s\n\n', output_file);
+
+%% 10. SINGLE PLOT — ALL CURVES
+figure('Units','centimeters','Position',[2 2 24 15]);
+
+% --- Engineering stress-strain
+p1 = plot(eps_n, sig_n, 'b-', 'LineWidth', 2, ...
+          'DisplayName', 'Engineering stress-strain');
+hold on;
+
+% --- True stress-strain (valid pre-necking, dashed post-necking)
+p2 = plot(eps_t(1:uts_idx), sig_t(1:uts_idx), 'r-', 'LineWidth', 2, ...
+          'DisplayName', 'True stress-strain (pre-necking)');
+plot(eps_t(uts_idx:end), sig_t(uts_idx:end), 'r--', 'LineWidth', 1.5, ...
+     'HandleVisibility', 'off');   % dashed extension, no extra legend entry
+
+% --- Undamaged (effective) true stress
+p3 = plot(eps_t, sig_t_tilde, 'g-', 'LineWidth', 2, ...
+          'DisplayName', 'Undamaged true stress \sigmã_t');
+
+% --- Yield point
+p4 = plot(eps_y_eng, sig_y_eng, 'ko', 'MarkerSize', 9, ...
+          'MarkerFaceColor', 'k', ...
+          'DisplayName', sprintf('Yield point  \\sigma_n=%.1f MPa', sig_y_eng));
+
+% --- UTS point
+p5 = plot(eps_UTS_eng, sig_UTS_eng, 'ms', 'MarkerSize', 9, ...
+          'MarkerFaceColor', 'm', ...
+          'DisplayName', sprintf('UTS (necking onset)  \\sigma_n=%.1f MPa', sig_UTS_eng));
+
+% --- Vertical reference lines
+xline(eps_y_eng,   'k:', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+xline(eps_UTS_eng, 'm:', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+
+% --- Shade post-necking region
+yl = [0 200];
+patch([eps_UTS_eng max(eps_n) max(eps_n) eps_UTS_eng], ...
+      [yl(1) yl(1) yl(2) yl(2)], [0.85 0.85 0.85], ...
+      'FaceAlpha', 0.35, 'EdgeColor', 'none', ...
+      'DisplayName', 'Post-necking region');
+
+% --- Annotations
+text(eps_y_eng + 0.003, sig_y_eng - 8, ...
+     sprintf('Y  (%.2f, %.1f)', eps_y_eng, sig_y_eng), ...
+     'FontSize', 9, 'Color', 'k');
+text(eps_UTS_eng + 0.003, sig_UTS_eng + 3, ...
+     sprintf('UTS  (%.3f, %.1f)', eps_UTS_eng, sig_UTS_eng), ...
+     'FontSize', 9, 'Color', [0.6 0 0.6]);
+
+% --- Formatting
+xlabel('Strain  \epsilon  (-)', 'FontSize', 13);
+ylabel('Stress  \sigma  (MPa)', 'FontSize', 13);
+title('Aluminium – Engineering, True & Undamaged True Stress-Strain', 'FontSize', 13);
+legend('Location', 'northeast', 'FontSize', 10);
+xlim([0 max(eps_n)*1.02]);
+ylim(yl);
+grid on;
+set(gca, 'FontSize', 11);
+
+exportgraphics(gcf, 'Stress_Strain_All_Curves.png', 'Resolution', 300);
+fprintf('Plot saved as Stress_Strain_All_Curves.png\n');
+fprintf('Done.\n');
