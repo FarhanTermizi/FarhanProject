@@ -1,0 +1,273 @@
+% =========================================================
+% Full Stress-Strain + Damage Model for ABAQUS
+% MECH0026 - Plasticity Coursework
+% Aluminium Uniaxial Tensile Test
+% =========================================================
+% Computes:
+%   - Engineering stress/strain
+%   - True stress/strain
+%   - Undamaged (effective) true stress
+%   - True plastic strain
+%   - Damage variable D (linear + non-linear tabular)
+%   - Equivalent plastic displacement u_bar^pl
+%
+% ABAQUS damage input requires: D = function(u_bar^pl)
+%   Linear:     D = u_bar^pl / u_bar^pl_f
+%   Non-linear: tabular D vs u_bar^pl derived from experiment
+% =========================================================
+
+clc; clear; close all;
+
+%% =========================================================
+%  USER INPUTS — change these as needed
+%  =========================================================
+L = 1.0;       % Element size (mm) — SET THIS TO YOUR MESH SIZE
+
+% Material parameters (from 0.2% offset analysis)
+E         = 69170;    % Young's modulus (MPa)
+nu        = 0.3;      % Poisson's ratio (given)
+sig_y_eng = 119.76;   % Engineering yield stress (MPa)
+eps_y_eng = 0.0037;   % Engineering yield strain (-)
+% =========================================================
+
+%% 1. LOAD DATA
+data  = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+eps_n = data(:, 1);
+sig_n = data(:, 2);
+N     = length(eps_n);
+fprintf('Loaded %d data points.\n', N);
+
+%% 2. KEY INDICES
+yield_idx              = find(eps_n >= eps_y_eng, 1, 'first');
+[sig_UTS_eng, uts_idx] = max(sig_n);
+eps_UTS_eng            = eps_n(uts_idx);
+
+% Last point before stress = 0 (fracture)
+fracture_idx = find(sig_n > 0, 1, 'last');
+
+fprintf('Yield    : index %d,  eps_n=%.4f,  sig_n=%.2f MPa\n', yield_idx, eps_n(yield_idx), sig_n(yield_idx));
+fprintf('UTS      : index %d,  eps_n=%.4f,  sig_n=%.2f MPa\n', uts_idx,   eps_UTS_eng,      sig_UTS_eng);
+fprintf('Fracture : index %d,  eps_n=%.4f,  sig_n=%.2f MPa\n', fracture_idx, eps_n(fracture_idx), sig_n(fracture_idx));
+
+%% 3. TRUE STRESS & STRAIN (all points)
+eps_t = log(1 + eps_n);
+sig_t = sig_n .* (1 + eps_n);
+
+%% 4. TRUE PLASTIC STRAIN (all points)
+eps_t_pl = max(eps_t - sig_t ./ E, 0);
+
+%% 5. UNDAMAGED (EFFECTIVE) TRUE STRESS
+% Pre-necking  : sig_t_tilde = sig_t          (D = 0, no damage)
+% Post-necking : sig_t_tilde = sig_UTS*(1+eps_n) (perfectly plastic assumption)
+sig_t_tilde = zeros(N, 1);
+for i = 1:N
+    if eps_n(i) <= eps_UTS_eng
+        sig_t_tilde(i) = sig_t(i);
+    else
+        sig_t_tilde(i) = sig_UTS_eng * (1 + eps_n(i));
+    end
+end
+
+%% 6. DAMAGE VARIABLE D (post-necking only)
+% D = 1 - sig_t / sig_t_tilde
+% Pre-necking: D = 0
+% Post-necking: derived from ratio of damaged to undamaged true stress
+D_var = zeros(N, 1);
+for i = uts_idx+1 : N
+    if sig_t_tilde(i) > 0
+        D_var(i) = 1 - sig_t(i) / sig_t_tilde(i);
+    else
+        D_var(i) = 1;
+    end
+end
+D_var = min(D_var, 1);   % Cap at 1
+
+%% 7. TRUE PLASTIC STRAIN AT UTS (onset of necking)
+eps_t_pl_UTS = eps_t_pl(uts_idx);
+fprintf('\nTrue plastic strain at UTS (eps_t_pl_UTS) = %.6f\n', eps_t_pl_UTS);
+
+%% 8. EQUIVALENT PLASTIC DISPLACEMENT u_bar^pl
+% u_bar^pl = L * (eps_t_pl - eps_t_pl_UTS)  for post-necking points
+% u_bar^pl = 0 for pre-necking points
+u_bar_pl = zeros(N, 1);
+for i = uts_idx : N
+    u_bar_pl(i) = L * (eps_t_pl(i) - eps_t_pl_UTS);
+end
+u_bar_pl = max(u_bar_pl, 0);
+
+% Failure displacement (u_bar^pl when D -> 1)
+u_bar_pl_f = u_bar_pl(fracture_idx);
+fprintf('Failure displacement u_bar^pl_f = %.6f mm  (with L = %.1f mm)\n', u_bar_pl_f, L);
+
+%% 9. BUILD ABAQUS DAMAGE TABLES (post-necking only)
+post_idx = uts_idx : fracture_idx;   % indices from UTS to fracture
+
+u_bar_post = u_bar_pl(post_idx);
+D_post     = D_var(post_idx);
+
+% --- Linear damage law ---
+% D = u_bar^pl / u_bar^pl_f  (straight line from 0 to 1)
+D_linear = u_bar_post / u_bar_pl_f;
+D_linear = min(D_linear, 1);
+
+%% 10. KEY VALUES SUMMARY
+sig_t_UTS  = sig_t(uts_idx);
+eps_t_UTS  = eps_t(uts_idx);
+
+fprintf('\n============================================\n');
+fprintf('  Key Values Summary\n');
+fprintf('============================================\n');
+fprintf('  E                      = %d MPa\n',      E);
+fprintf('  nu                     = %.1f\n',         nu);
+fprintf('  sig_y  (eng)           = %.2f MPa\n',    sig_y_eng);
+fprintf('  eps_y  (eng)           = %.4f\n',         eps_y_eng);
+fprintf('  sig_UTS (eng)          = %.4f MPa\n',    sig_UTS_eng);
+fprintf('  eps_UTS (eng)          = %.4f\n',         eps_UTS_eng);
+fprintf('  sig_t at UTS           = %.4f MPa\n',    sig_t_UTS);
+fprintf('  eps_t at UTS           = %.6f\n',         eps_t_UTS);
+fprintf('  eps_t_pl at UTS        = %.6f\n',         eps_t_pl_UTS);
+fprintf('  u_bar^pl_f (L=%.1fmm)  = %.6f mm\n',    L, u_bar_pl_f);
+fprintf('============================================\n\n');
+
+%% 11. PRINT DAMAGE TABLE
+fprintf('--- ABAQUS Damage Table (post-necking) ---\n');
+fprintf('%-6s | %-14s | %-12s | %-12s\n', 'idx', 'u_bar^pl (mm)', 'D (non-lin)', 'D (linear)');
+fprintf('%s\n', repmat('-', 1, 55));
+for i = 1:length(post_idx)
+    fprintf('%-6d | %-14.6f | %-12.6f | %-12.6f\n', ...
+        post_idx(i), u_bar_post(i), D_post(i), D_linear(i));
+end
+fprintf('%s\n', repmat('-', 1, 55));
+
+%% 12. EXPORT TO EXCEL
+% Sheet 1: Full data table
+region = strings(N, 1);
+for i = 1:N
+    if i < yield_idx,       region(i) = "Elastic";
+    elseif i <= uts_idx,    region(i) = "Plastic";
+    else,                   region(i) = "Post-necking";
+    end
+end
+
+full_table = table(eps_n, sig_n, eps_t, sig_t, sig_t_tilde, eps_t_pl, D_var, u_bar_pl, region, ...
+    'VariableNames', { ...
+    'Eng_Strain', 'Eng_Stress_MPa', ...
+    'True_Strain', 'True_Stress_MPa', 'Undamaged_True_Stress_MPa', ...
+    'True_Plastic_Strain', 'Damage_D', 'u_bar_pl_mm', 'Region'});
+
+% Sheet 2: ABAQUS plasticity input (yield -> UTS)
+abaqus_pl_idx  = yield_idx : uts_idx;
+sig_t_abaqus   = sig_t(abaqus_pl_idx);
+eps_t_pl_abaqus = eps_t_pl(abaqus_pl_idx);
+eps_t_pl_abaqus(1) = 0;   % First entry must be 0 for ABAQUS
+abaqus_plasticity = table(sig_t_abaqus, eps_t_pl_abaqus, ...
+    'VariableNames', {'True_Stress_MPa', 'True_Plastic_Strain'});
+
+% Sheet 3: ABAQUS damage input (non-linear tabular)
+abaqus_damage_nl = table(D_post, u_bar_post, ...
+    'VariableNames', {'Damage_D', 'u_bar_pl_mm'});
+
+% Sheet 4: ABAQUS damage input (linear)
+abaqus_damage_lin = table(D_linear, u_bar_post, ...
+    'VariableNames', {'Damage_D_linear', 'u_bar_pl_mm'});
+
+output_file = 'Aluminium_Full_Results_Damage.xlsx';
+writetable(full_table,        output_file, 'Sheet', 'Full_Data');
+writetable(abaqus_plasticity, output_file, 'Sheet', 'ABAQUS_Plasticity');
+writetable(abaqus_damage_nl,  output_file, 'Sheet', 'ABAQUS_Damage_NonLinear');
+writetable(abaqus_damage_lin, output_file, 'Sheet', 'ABAQUS_Damage_Linear');
+fprintf('Exported to: %s\n\n', output_file);
+
+%% 13. SINGLE PLOT — ALL CURVES
+figure('Units','centimeters','Position',[2 2 26 16]);
+
+% --- Stress curves (left y-axis)
+yyaxis left
+
+p1 = plot(eps_n, sig_n, 'b-', 'LineWidth', 2, ...
+          'DisplayName', 'Engineering stress-strain');
+hold on;
+
+p2 = plot(eps_t(1:uts_idx), sig_t(1:uts_idx), 'r-', 'LineWidth', 2, ...
+          'DisplayName', 'True stress-strain (pre-necking)');
+plot(eps_t(uts_idx:end), sig_t(uts_idx:end), 'r--', 'LineWidth', 1.4, ...
+     'HandleVisibility', 'off');
+
+p3 = plot(eps_t, sig_t_tilde, 'g-', 'LineWidth', 2, ...
+          'DisplayName', 'Undamaged true stress \tilde{\sigma}_t');
+
+% Yield and UTS markers
+plot(eps_y_eng,   sig_y_eng,   'ko', 'MarkerSize', 9, 'MarkerFaceColor', 'k', ...
+     'DisplayName', sprintf('Yield  \\sigma_n=%.1f MPa', sig_y_eng));
+plot(eps_UTS_eng, sig_UTS_eng, 'ms', 'MarkerSize', 9, 'MarkerFaceColor', 'm', ...
+     'DisplayName', sprintf('UTS    \\sigma_n=%.1f MPa', sig_UTS_eng));
+
+xline(eps_y_eng,   'k:', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+xline(eps_UTS_eng, 'm:', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+
+ylabel('Stress  \sigma  (MPa)', 'FontSize', 13);
+ylim([0 210]);
+set(gca, 'YColor', 'k');
+
+% --- Damage curves (right y-axis)
+yyaxis right
+
+p6 = plot(eps_n(post_idx), D_post,   'k-',  'LineWidth', 2, ...
+          'DisplayName', 'D (non-linear tabular)');
+p7 = plot(eps_n(post_idx), D_linear, 'k--', 'LineWidth', 1.8, ...
+          'DisplayName', 'D (linear)');
+
+ylabel('Damage variable  D  (-)', 'FontSize', 13);
+ylim([0 1.5]);
+set(gca, 'YColor', [0.3 0.3 0.3]);
+
+% --- Post-necking shading
+yyaxis left;
+yl = ylim;
+patch([eps_UTS_eng max(eps_n) max(eps_n) eps_UTS_eng], ...
+      [yl(1) yl(1) yl(2) yl(2)], [0.85 0.85 0.85], ...
+      'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
+      'DisplayName', 'Post-necking region');
+
+% Annotations
+text(eps_y_eng + 0.004, sig_y_eng - 10, ...
+     sprintf('Y (%.4f, %.1f)', eps_y_eng, sig_y_eng), ...
+     'FontSize', 9, 'Color', 'k');
+text(eps_UTS_eng + 0.003, sig_UTS_eng + 4, ...
+     sprintf('UTS (%.3f, %.1f)', eps_UTS_eng, sig_UTS_eng), ...
+     'FontSize', 9, 'Color', [0.6 0 0.6]);
+
+% Formatting
+xlabel('Engineering Strain  \epsilon_n  (-)', 'FontSize', 13);
+title('Aluminium – Stress-Strain & Damage Evolution', 'FontSize', 13);
+legend('Location', 'northeast', 'FontSize', 9);
+xlim([0 max(eps_n)*1.02]);
+grid on;
+set(gca, 'FontSize', 11);
+
+exportgraphics(gcf, 'Stress_Strain_Damage_All.png', 'Resolution', 300);
+fprintf('Plot saved as Stress_Strain_Damage_All.png\n');
+
+%% 14. DAMAGE EVOLUTION PLOT (D vs u_bar^pl)
+figure('Units','centimeters','Position',[2 20 20 13]);
+
+plot(u_bar_post, D_post,   'b-o', 'LineWidth', 2, 'MarkerSize', 4, ...
+     'MarkerFaceColor', 'b', 'DisplayName', 'Non-linear (tabular from experiment)');
+hold on;
+plot(u_bar_post, D_linear, 'r--', 'LineWidth', 2, ...
+     'DisplayName', 'Linear');
+plot(u_bar_pl_f, 1, 'ks', 'MarkerSize', 10, 'MarkerFaceColor', 'k', ...
+     'DisplayName', sprintf('Failure: \\bar{u}_f^{pl} = %.4f mm', u_bar_pl_f));
+
+xlabel('Equivalent Plastic Displacement  \bar{u}^{pl}  (mm)', 'FontSize', 13);
+ylabel('Damage Variable  D  (-)', 'FontSize', 13);
+title(sprintf('Damage Evolution Law  (L = %.1f mm)', L), 'FontSize', 13);
+legend('Location', 'southeast', 'FontSize', 10);
+ylim([0 1.1]);
+xlim([0 u_bar_pl_f * 1.1]);
+grid on;
+set(gca, 'FontSize', 11);
+
+exportgraphics(gcf, 'Damage_Evolution_D_vs_upl.png', 'Resolution', 300);
+fprintf('Damage plot saved as Damage_Evolution_D_vs_upl.png\n');
+fprintf('Done.\n');
