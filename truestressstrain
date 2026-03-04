@@ -1,0 +1,172 @@
+% =========================================================
+% True Stress & True Plastic Strain for ABAQUS FEA
+% MECH0026 - Plasticity Coursework
+% Aluminium - Isotropic Hardening Model
+% =========================================================
+% Formulas used (assuming incompressibility, DeltaV = 0):
+%   True stress:         sigma_t = sigma_n * (1 + eps_n)
+%   True strain:         eps_t   = ln(1 + eps_n)
+%   True plastic strain: eps_t_pl = eps_t - sigma_t / E
+%
+% ABAQUS requires: tabular data of (sigma_t, eps_t_pl)
+%   - Starting AT the yield point (eps_t_pl = 0 at first entry)
+%   - Data only up to onset of necking (UTS point)
+%   - Post-necking data is NOT valid (triaxial stress state)
+% =========================================================
+
+clc; clear; close all;
+
+%% 1. LOAD DATA
+data = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+
+eps_n = data(:, 1);   % Engineering strain
+sig_n = data(:, 2);   % Engineering stress (MPa)
+
+%% 2. MATERIAL PARAMETERS (from previous 0.2% offset analysis)
+E          = 69170;      % Young's modulus (MPa)
+nu         = 0.3;        % Poisson's ratio (given)
+sig_y_eng  = 119.76;     % Engineering yield stress (MPa)
+eps_y_eng  = 0.0037;     % Engineering yield strain (-)
+
+fprintf('============================================\n');
+fprintf('  Material Parameters\n');
+fprintf('============================================\n');
+fprintf('  E  = %.0f MPa (%.2f GPa)\n', E, E/1000);
+fprintf('  nu = %.1f\n', nu);
+fprintf('  sigma_y (eng) = %.2f MPa\n', sig_y_eng);
+fprintf('  eps_y   (eng) = %.4f\n', eps_y_eng);
+
+%% 3. FIND UTS INDEX (onset of necking = peak engineering stress)
+[sig_UTS_eng, uts_idx] = max(sig_n);
+eps_UTS_eng = eps_n(uts_idx);
+
+fprintf('\n============================================\n');
+fprintf('  UTS / Onset of Necking\n');
+fprintf('============================================\n');
+fprintf('  sigma_UTS (eng) = %.4f MPa\n', sig_UTS_eng);
+fprintf('  eps_UTS   (eng) = %.4f\n', eps_UTS_eng);
+
+%% 4. CONVERT ENGINEERING -> TRUE (up to UTS only)
+% Beyond necking, incompressibility is violated -> formulas invalid
+eps_n_pre = eps_n(1:uts_idx);
+sig_n_pre = sig_n(1:uts_idx);
+
+sig_t = sig_n_pre .* (1 + eps_n_pre);    % True stress
+eps_t = log(1 + eps_n_pre);              % True strain
+
+%% 5. TRUE YIELD AND TRUE UTS VALUES
+sig_t_yield = sig_y_eng * (1 + eps_y_eng);
+eps_t_yield = log(1 + eps_y_eng);
+
+sig_t_UTS = sig_UTS_eng * (1 + eps_UTS_eng);
+eps_t_UTS = log(1 + eps_UTS_eng);
+
+fprintf('\n============================================\n');
+fprintf('  True Stress/Strain at Key Points\n');
+fprintf('============================================\n');
+fprintf('  True yield stress     = %.4f MPa\n', sig_t_yield);
+fprintf('  True yield strain     = %.6f\n', eps_t_yield);
+fprintf('  True UTS stress       = %.4f MPa\n', sig_t_UTS);
+fprintf('  True UTS strain       = %.6f\n', eps_t_UTS);
+
+%% 6. TRUE PLASTIC STRAIN
+% eps_t_pl = eps_t - eps_t_elastic = eps_t - sigma_t / E
+eps_t_pl = eps_t - sig_t / E;
+
+%% 7. BUILD ABAQUS PLASTICITY TABLE
+% Extract rows from yield point onwards (eps_t_pl >= 0)
+% ABAQUS requires:
+%   - First row: (sigma_t_yield, 0.0)  <- yield point, plastic strain = 0
+%   - Subsequent rows: increasing plastic strain up to UTS
+
+% Find first data index at or beyond yield strain
+yield_data_idx = find(eps_n_pre >= eps_y_eng, 1, 'first');
+
+% Trim to yield -> UTS
+sig_t_abaqus   = sig_t(yield_data_idx:end);
+eps_t_pl_abaqus = eps_t_pl(yield_data_idx:end);
+
+% Force any small negative values to zero (numerical noise at yield)
+eps_t_pl_abaqus = max(eps_t_pl_abaqus, 0);
+
+% Prepend exact interpolated yield point as row 1 (eps_pl = 0)
+sig_t_abaqus   = [sig_t_yield;   sig_t_abaqus];
+eps_t_pl_abaqus = [0.0;          eps_t_pl_abaqus];
+
+fprintf('\n============================================\n');
+fprintf('  ABAQUS Plasticity Table Summary\n');
+fprintf('============================================\n');
+fprintf('  Number of data points : %d\n', length(sig_t_abaqus));
+fprintf('  First row (yield)     : sigma_t = %.4f MPa,  eps_pl = %.6f\n', ...
+        sig_t_abaqus(1), eps_t_pl_abaqus(1));
+fprintf('  Last row  (UTS)       : sigma_t = %.4f MPa,  eps_pl = %.6f\n', ...
+        sig_t_abaqus(end), eps_t_pl_abaqus(end));
+
+%% 8. PRINT FULL TABLE TO COMMAND WINDOW
+fprintf('\n--------------------------------------------\n');
+fprintf('  True Stress (MPa)   |  True Plastic Strain\n');
+fprintf('--------------------------------------------\n');
+for i = 1:length(sig_t_abaqus)
+    fprintf('  %14.4f      |  %18.6f\n', sig_t_abaqus(i), eps_t_pl_abaqus(i));
+end
+fprintf('--------------------------------------------\n');
+
+%% 9. EXPORT TO EXCEL (two tabs)
+% Tab 1: Full true stress/strain table (all points up to UTS)
+full_table = table(eps_n_pre, sig_n_pre, eps_t, sig_t, eps_t_pl, ...
+    'VariableNames', { ...
+    'Eng_Strain', ...
+    'Eng_Stress_MPa', ...
+    'True_Strain', ...
+    'True_Stress_MPa', ...
+    'True_Plastic_Strain'});
+
+% Tab 2: ABAQUS input table (yield -> UTS only)
+abaqus_table = table(sig_t_abaqus, eps_t_pl_abaqus, ...
+    'VariableNames', {'True_Stress_MPa', 'True_Plastic_Strain'});
+
+output_file = 'Aluminium_True_Stress_Plastic_Strain.xlsx';
+writetable(full_table,   output_file, 'Sheet', 'Full_Conversion_Table');
+writetable(abaqus_table, output_file, 'Sheet', 'ABAQUS_Plasticity_Input');
+fprintf('\nResults exported to: %s\n', output_file);
+
+%% 10. PLOTS
+
+% --- Figure 1: Engineering vs True Stress-Strain (up to UTS) ---
+figure('Units','centimeters','Position',[2 2 18 13]);
+plot(eps_n_pre, sig_n_pre, 'b-',  'LineWidth', 1.8, 'DisplayName', 'Engineering');
+hold on;
+plot(eps_t,     sig_t,     'r-',  'LineWidth', 1.8, 'DisplayName', 'True (up to UTS)');
+xline(eps_y_eng,  'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+xline(eps_UTS_eng,'m--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+plot(eps_y_eng,  sig_y_eng,  'ko', 'MarkerSize', 8, 'MarkerFaceColor', 'k', ...
+     'DisplayName', sprintf('Yield (\\sigma=%.1f MPa)', sig_y_eng));
+plot(eps_UTS_eng, sig_UTS_eng, 'ms', 'MarkerSize', 8, 'MarkerFaceColor', 'm', ...
+     'DisplayName', sprintf('UTS (\\sigma=%.1f MPa)', sig_UTS_eng));
+xlabel('Strain (-)', 'FontSize', 12);
+ylabel('Stress (MPa)', 'FontSize', 12);
+title('Engineering vs True Stress-Strain (pre-necking)', 'FontSize', 13);
+legend('Location', 'southeast', 'FontSize', 10);
+grid on;
+set(gca, 'FontSize', 11);
+exportgraphics(gcf, 'Fig1_Eng_vs_True_StressStrain.png', 'Resolution', 300);
+
+% --- Figure 2: ABAQUS Input - True Stress vs True Plastic Strain ---
+figure('Units','centimeters','Position',[22 2 18 13]);
+plot(eps_t_pl_abaqus, sig_t_abaqus, 'r-o', 'LineWidth', 1.8, ...
+     'MarkerSize', 4, 'MarkerFaceColor', 'r');
+xlabel('True Plastic Strain, \epsilon_t^{pl} (-)', 'FontSize', 12);
+ylabel('True Stress, \sigma_t (MPa)', 'FontSize', 12);
+title('ABAQUS Isotropic Hardening Input: True Stress vs True Plastic Strain', 'FontSize', 12);
+grid on;
+set(gca, 'FontSize', 11);
+text(eps_t_pl_abaqus(1)+0.0002, sig_t_abaqus(1)-2, ...
+     sprintf('Yield\n\\sigma_t=%.1f MPa\n\\epsilon^{pl}=0', sig_t_abaqus(1)), ...
+     'FontSize', 9, 'Color', 'k');
+text(eps_t_pl_abaqus(end)-0.003, sig_t_abaqus(end)+1.5, ...
+     sprintf('UTS\n\\sigma_t=%.1f MPa', sig_t_abaqus(end)), ...
+     'FontSize', 9, 'Color', 'k');
+exportgraphics(gcf, 'Fig2_ABAQUS_Plasticity_Input.png', 'Resolution', 300);
+
+fprintf('\nFigures saved.\n');
+fprintf('Done.\n');
