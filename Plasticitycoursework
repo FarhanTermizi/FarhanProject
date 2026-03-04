@@ -1,0 +1,221 @@
+%% Clear workspace
+clear; clc; close all;
+%%
+% Read Excel file
+data = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+
+strain = data(:,1);     % Engineering strain
+stress = data(:,2);     % Engineering stress (MPa)
+
+% Select elastic region
+% Adjust this limit if needed
+elastic_limit = 0.001;  
+
+elastic_idx = strain <= elastic_limit;
+
+strain_elastic = strain(elastic_idx);
+stress_elastic = stress(elastic_idx);
+
+% Linear fit (least squares)
+p = polyfit(strain_elastic, stress_elastic, 1);
+
+E = p(1);   % Slope = Young's modulus (MPa)
+
+% Display result
+fprintf('Young''s Modulus E = %.2f MPa\n', E);
+fprintf('Young''s Modulus E = %.2f GPa\n', E/1000);
+
+%% Plot
+figure;
+plot(strain, stress, 'b'); hold on;
+plot(strain_elastic, polyval(p,strain_elastic), 'r','LineWidth',2);
+
+xlabel('Engineering Strain');
+ylabel('Engineering Stress (MPa)');
+title('Young''s Modulus Calculation');
+legend('Full Data','Linear Fit (Elastic Region)');
+grid on;
+
+%%
+
+
+
+
+
+
+%Scatter plot
+
+
+
+
+
+%% Clear workspace
+clear; clc; close all;
+
+%% Read Excel file
+data = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+
+strain = data(:,1);     % Engineering strain
+stress = data(:,2);     % Engineering stress (MPa)
+
+%% Select elastic region
+elastic_limit = 0.001;  % Adjust if needed
+
+elastic_idx = strain <= elastic_limit;
+
+strain_elastic = strain(elastic_idx);
+stress_elastic = stress(elastic_idx);
+
+%% Linear fit (least squares)
+p = polyfit(strain_elastic, stress_elastic, 1);
+E = p(1);   % Slope = Young's modulus (MPa)
+
+%% Display result
+fprintf('Young''s Modulus E = %.2f MPa\n', E);
+fprintf('Young''s Modulus E = %.2f GPa\n', E/1000);
+
+%% Plot - Elastic Region Only
+figure;
+
+% Scatter plot of elastic data points
+scatter(strain_elastic, stress_elastic, 40, 'b', 'filled', ...
+    'DisplayName', 'Elastic Data');
+hold on;
+
+% Gradient line (linear fit) — extended slightly for visual clarity
+strain_fit = linspace(min(strain_elastic), max(strain_elastic), 100);
+plot(strain_fit, polyval(p, strain_fit), 'r-', 'LineWidth', 2, ...
+    'DisplayName', sprintf('Linear Fit (E = %.1f GPa)', E/1000));
+
+%% Annotations
+xlabel('Engineering Strain');
+ylabel('Engineering Stress (MPa)');
+title('Elastic Region — Young''s Modulus');
+legend('Location', 'northwest');
+grid on;
+
+% Add E value as text annotation on plot
+x_mid = mean(strain_elastic) * 0.5;
+y_mid = polyval(p, x_mid) * 0.6;
+text(x_mid, y_mid, sprintf('E = %.1f GPa', E/1000), ...
+    'FontSize', 11, 'Color', 'red', 'FontWeight', 'bold');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% New line of code to find offset
+% =========================================================
+% 0.2% Offset Method - Yield Strength & Yield Strain
+% MECH0026 - Uniaxial Tensile Test on Aluminium
+% =========================================================
+
+clc; clear; close all;
+
+%% 1. LOAD DATA
+% Read experimental stress-strain data from Excel file
+data = readmatrix('C:\Users\farha\Desktop\UCL\Plasticity\Plasticity Coursework\Aluminium - Engineering stress_strain.xlsx');
+
+strain = data(:, 1);   % Longitudinal engineering strain, epsilon_2
+stress = data(:, 2);   % Longitudinal engineering stress, sigma_2 (MPa)
+
+%% 2. CALCULATE YOUNG'S MODULUS (E)
+% Use the linear elastic region - identify it by finding where the
+% curve starts to deviate from linearity.
+% Adjust 'elastic_limit_idx' if needed based on your data.
+
+% Automatically estimate linear region (first portion up to ~0.2% strain)
+elastic_mask = strain <= 0.001;  % Adjust this threshold if needed
+strain_elastic = strain(elastic_mask);
+stress_elastic = stress(elastic_mask);
+
+% Linear fit to elastic region (polyfit degree 1)
+p = polyfit(strain_elastic, stress_elastic, 1);
+E = p(1);   % Young's modulus in MPa
+fprintf('Young''s Modulus E = %.0f MPa (%.2f GPa)\n', E, E/1000);
+
+%% 3. CONSTRUCT THE 0.2% OFFSET LINE
+offset = 0.002;  % 0.2% offset
+
+% Offset line: sigma = E * (epsilon - 0.002)
+strain_offset_line = linspace(offset, max(strain), 500);
+stress_offset_line = E * (strain_offset_line - offset);
+
+%% 4. FIND INTERSECTION (Yield Point)
+% Interpolate the experimental curve onto the same strain axis,
+% then find where (stress_curve - stress_offset_line) changes sign.
+
+% Interpolate experimental stress onto offset line strain values
+stress_interp = interp1(strain, stress, strain_offset_line, 'linear', 'extrap');
+
+% Difference between experimental curve and offset line
+diff = stress_interp - stress_offset_line;
+
+% Find sign change (intersection)
+sign_change = find(diff(1:end-1) .* diff(2:end) < 0, 1, 'first');
+
+if isempty(sign_change)
+    error('No intersection found. Check elastic region selection or offset value.');
+end
+
+% Linear interpolation between the two bracketing points
+strain_yield = strain_offset_line(sign_change) + ...
+    (strain_offset_line(sign_change+1) - strain_offset_line(sign_change)) * ...
+    abs(diff(sign_change)) / (abs(diff(sign_change)) + abs(diff(sign_change+1)));
+
+stress_yield = interp1(strain, stress, strain_yield, 'linear');
+
+fprintf('Yield Strain  epsilon_Y = %.4f (%.2f%%)\n', strain_yield, strain_yield*100);
+fprintf('Yield Strength sigma_Y  = %.2f MPa\n', stress_yield);
+
+%% 5. PLOT
+figure('Units','centimeters','Position',[2 2 18 13]);
+
+% Full stress-strain curve
+plot(strain, stress, 'b-', 'LineWidth', 1.8, 'DisplayName', 'Experimental data');
+hold on;
+
+% Offset line
+plot(strain_offset_line, stress_offset_line, 'r--', 'LineWidth', 1.5, ...
+    'DisplayName', '0.2% Offset line');
+
+% Yield point marker
+plot(strain_yield, stress_yield, 'ko', 'MarkerSize', 9, 'MarkerFaceColor', 'k', ...
+    'DisplayName', sprintf('Yield point (\\sigma_Y = %.1f MPa, \\epsilon_Y = %.4f)', ...
+    stress_yield, strain_yield));
+
+% Dashed drop lines to axes
+plot([strain_yield strain_yield], [0 stress_yield], 'k:', 'LineWidth', 1, ...
+    'HandleVisibility', 'off');
+plot([0 strain_yield], [stress_yield stress_yield], 'k:', 'LineWidth', 1, ...
+    'HandleVisibility', 'off');
+
+% Formatting
+xlabel('Longitudinal Engineering Strain, \epsilon_2 (-)', 'FontSize', 12);
+ylabel('Longitudinal Engineering Stress, \sigma_2 (MPa)', 'FontSize', 12);
+title('0.2% Offset Method – Yield Point Identification', 'FontSize', 13);
+legend('Location', 'southeast', 'FontSize', 10);
+grid on;
+xlim([0 0.01]);   % Zoom in to show yield point clearly (matches Fig 2b)
+ylim([0 max(stress)*1.1]);
+set(gca, 'FontSize', 11);
+
+% Annotate yield values on plot
+text(strain_yield + 0.0002, stress_yield - 5, ...
+    sprintf('\\sigma_Y = %.1f MPa\n\\epsilon_Y = %.4f', stress_yield, strain_yield), ...
+    'FontSize', 10, 'Color', 'k');
+
+% Save figure
+exportgraphics(gcf, 'yield_point_offset_method.png', 'Resolution', 300);
+fprintf('\nPlot saved as yield_point_offset_method.png\n');
